@@ -1,0 +1,484 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <title>Yomi - a deep dive analysis</title>
+
+    <link rel="stylesheet" href="dist/reset.css">
+    <link rel="stylesheet" href="dist/reveal.css">
+    <link rel="stylesheet" href="dist/theme/black.css" id="theme">
+
+    <!-- Theme used for syntax highlighted code -->
+    <link rel="stylesheet" href="plugin/highlight/monokai.css" id="highlight-theme">
+  </head>
+  <body>
+    <div class="reveal">
+      <div class="slides">
+	<section>
+	  <a href="https://suse.com">
+	    <img src="YOMI/SUSE_Logo-hor_L_Green-White-neg_sRGB.svg" alt="SUSE logo" style="height: 180px; margin: 0 auto 4rem auto; background: transparent;" class="suse-logo">
+	  </a>
+	  <h3>Yomi - Yet one more installer</h3>
+	  <h4>A deep dive analysis</h4>
+	</section>
+
+	<!-- WHAT IS YOMI -->
+	<section>
+	  <section>What is Yomi</section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      - A new type of installer for the [open]SUSE family
+	        - As an alternative to AutoYaST
+	      - Designed for parallel installations of heterogeneous nodes
+	        - Unattended
+	        - Simple and smart configuration files (Jinja2 / YAML)
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      - Orchestration via a centralized decision point (optional)
+	        - Master-less / Minion-less (container)
+	      - Expressed as a Salt state (idempotent)
+	      - Can work alone or integrated into a bigger solution
+	      - Closer to DevOps / GitOps
+	    </textarea>
+	  </section>
+	</section>
+	<section>
+	  <section>Alternative to AutoYaST</section>
+	  <section data-markdown>
+	    <textarea data-template>
+|                 | AutoYaST | Yomi |
+| --------------- | :------: | :--: |
+| Unattended      | ☑        | ☑    |
+| Snippets        | ☑        | ☑    |
+| Orchestration   | ☒        | ☑    |
+| Local decisions | ☐        | ☑    |
+| Extend          | ☐        | ☑    |
+| [Git/Dev]Ops    | ☐        | ☑    |
+| Battle tested   | ☑        | ☒    |
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## Strong Points
+	      - Small and focused
+	      - Easy to extend and integrate via Salt
+	      - chroot / image
+	      - Reporting and monitoring
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## Weak points
+	      - No battle tested
+	      - Missing/WIP some features (LUKS, bcache)
+	      - Salt dependent
+	    </textarea>
+	  </section>
+	</section>
+
+	<!-- SALT 101 -->
+	<section>
+	  <section>Salt 101</section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## Data
+	      - **Grains**: bits of public data exported by the minion
+	      - **Pillars**: private data created by the user, and used by the salt states as input (together with the grains)
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## Code
+	      - **Execution modules**: code that actuate or change a property in the minion
+	      - **States modules**: code that guarantee, based on some minimal
+preconditions, a final result
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## State
+	      - **Salt States**: YAML description of the state module and the parameters to be
+applied in a minion
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## Execution module
+	      - Validate the input data (parameters)
+	      - Execute a single action, if possible
+	      - If not, report fails
+	      - Usually returns *True* if succeed
+	      - Basic building block
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## State module
+	      - Validate input / validate expected preconditions in the environment
+	      - Identify and plan the needed changes to reach the target configuration
+	          - Difference between the current and expected configuration
+	      - Optionally, execute the planned actions via execution modules (test execution)
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      - Re-calculate the difference between the current and expected configuration to identify deviations
+	      - Report the actions and changes done
+	      - Ideally they can be used to fix a wrong configuration
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## Salt state
+	      - Are declared in a YAML document, as the pillars
+	      - Are only declarations, as the code lives in a state module
+	      - Can use Jinja2 templates to include some high level logic, but caution with the execution order!
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## Pillar as data
+	      - A Salt pillar is a YAML document that contains the data required by the states
+	          - Lives in the salt-master node
+	      - Used as a unique data structure to represent all the data
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      - You can assign to several nodes different pillars, based on local features (grains), and a query language
+	          - We can use the top.sls pillar, or any other Salt mechanism
+	      - Inside the pillar we can add logic via a template language (Jinja2)
+	    </textarea>
+	  </section>
+	</section>
+
+	<!-- TECHNICAL DETAILS -->
+	<section>
+	  <section>Technical details</section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## The master plan
+	      1. For each action in the installer build an execution module
+	          - Reuse and extend the ones from Salt
+	          - Implement the missing components
+	      2. For each high level action build a state that call one or more execution modules
+	          - Same rule here: reuse, extend, implement; all upstream
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      3. Write the SLS states that drive the installation
+	      4. Parameterize all the data via pillar
+	      5. ...
+	      6. ~~Profit!~~ Yomi!
+	    </textarea>
+	  </section>
+	  <section data-background-image="YOMI/three-levels.svg" data-background-color="azure"></section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## Upstream all the code!
+	      - Parted
+	          - Bugs, missing information, etc
+	      - Zypper
+	          – Root parameter, pattern: and product:, etc
+	      - Hardware Information
+	          - hwinfo, blkid, lsblk
+	      - Btrfs
+	          – Subvolumes, add a new state, etc
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      - chroot / freeze
+	      - cmdmod.run_chroot
+	      - mount / fstab
+	      - LVM / mdadm
+	      - systemd
+	      - ...
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+## Yomi as a set of states
+- Installer
+    - Storage
+        - Partition
+          - ...
+        - RAID
+        - Volumes
+        - ...
+    - Software
+        - ...
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      - Installer (cont.)
+	          - Users
+	              - ...
+	          - Bootloader
+	          - Post-install
+	              - ...
+	          - Reboot / Kexec
+	              - ...
+	    </textarea>
+	  </section>
+	  <section data-background-image="YOMI/tree.svg" data-background-size="50%" data-background-color="white"></section>
+	  <section>
+	    <h2>Simple states</h2>
+	    <pre><code data-trim data-noescape>
+mount_create_fstab:
+  mount.mounted:
+    - name: /mnt
+    - device: {{ device }}
+    - fstype: {{ fstype }}
+    - persist: False
+	    </code></pre>
+	  </section>
+	  <section>
+	    <h2>Low level states</h2>
+	    <pre><code data-trim data-noescape>
+prepare_kexec:
+  cmd.run:
+   - name: kexec -a -l /mnt/boot/vmlinuz --initrd=/mnt/boot/initrd --command-line="`cat /tmp/command_line`"
+   - onlyif: "[ -e /tmp/command_line ]"
+	    </code></pre>
+	  </section>
+	  <section>
+	    <h2>Complex states</h2>
+	    <pre><code data-trim data-noescape>
+{% set filesystems = pillar['filesystems'] %}
+
+{% for device, info in filesystems.items() %}
+mkfs_partition_{{ device }}:
+  formatted.formatted:
+    - name: {{ device }}
+    - fs_type: {{ info.filesystem }}
+  {% if info.filesystem in ('fat', 'vfat') and info.get('fat') %}
+    - fat: {{ info.fat }}
+  {% endif %}
+{% endfor %}
+	    </code></pre>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## Extension mechanisms
+	      - Edit the files (e.g. `include`)
+	      - Salt state ordering (states have uniq names)
+	          - `require[_in]`
+	          - `prereq[_in]`
+	          - `onchanges`
+	          - `onfail`
+	          - ...
+	    </textarea>
+	  </section>
+	  <section data-background-image="YOMI/architecture.svg" data-background-color="beige"></section>
+	</section>
+
+	<!-- DEMO -->
+	<section>
+	  <section><h2 class="r-fit-text">Demo</h2></section>
+	</section>
+
+	<!-- PILLAR -->
+	<section>
+	  <section>Pillar</section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      - [Fully documented](https://github.com/openSUSE/yomi/blob/master/README.md)
+	      - [With examples](https://github.com/openSUSE/yomi/tree/master/pillar)
+	        - openSUSE Leap, Tumbleweed
+	        - MicroOS 
+	        - SLE-15-SP2, SUSEConnect
+	        - Single, LVM, RAID1, BtrFS
+	        - BIOS, EFI, Secure boot
+	        - x86_64, AArch64
+	      - [Kubic orchestration](https://github.com/openSUSE/yomi/tree/master/docs/examples/kubic)
+	    </textarea>
+	  </section>
+	  <section>
+	    <h2>Simple pillar</h2>
+	    <pre><code data-trim data-noescape>
+filesystems:
+  /dev/sda1:
+    filesystem: vfat
+    mountpoint: /boot/efi
+  /dev/sda2:
+    filesystem: btrfs
+    mountpoint: /
+    subvolumes:
+      prefix: '@'
+      subvolume:
+        - path: home
+        - path: opt
+        - path: root
+        - ...
+	    </code></pre>
+	  </section>
+	  <section>
+	    <h2>Template in a pillar</h2>
+	    <pre><code data-trim data-noescape>
+filesystems:
+  ...
+{% let id = grains[‘id’] %}
+{% if id.startswith(‘controller’) %}
+  /dev/sda2:
+    filesystem: btrfs
+    mountpoint: /
+{% elif id.startswith(‘compute’) %}
+  /dev/sda2:
+    filesystem: ext4
+    mountpoint: /var/lib/images
+{% endif %}
+...
+	    </code></pre>
+	  </section>
+	</section>
+
+	<!-- CONTAINER -->
+	<section>
+	  <section>Container</section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      - Same idea of CoreOS installer (Rust)
+	      - Provide in a container the installer and all the tools required
+	      - Map `/dev` and `/run/udev` inside the container
+	      - Create the pillar in the host, and map into `/srv/pillar`
+	      - Execute the installer via `salt-call`
+	      - No `salt-master`, `salt-minion`, nor `systemd`!
+	    </textarea>
+	  </section>
+	  <section>
+	    <h2>Prepare the system</h2>
+	    <pre><code data-trim data-noescape>
+# Install podman after booting from Resque
+zypper in --no-recommends podman podman-cni-config
+
+# Store containers in memory
+mkdir /var/lib/containers
+mount -t tmpfs -o size=1024m tmpfs /var/lib/containers
+	    </code></pre>
+	  </section>
+	  <section>
+	    <h2>Prepare the system</h2>
+	    <pre><code data-trim data-noescape>
+podman pull registry.opensuse.org/systemsmanagement/yomi/images/opensuse/yomi:latest
+
+# Add the pillar data
+mkdir pillar
+
+# Execute salt-call inside the container
+podman run --privileged --rm \
+  -v /dev:/dev \
+  -v /run/udev:/run/udev \
+  -v ./pillar:/srv/pillar \
+  $CONTAINER_ID \
+  salt-call --local state.highstate
+	    </code></pre>
+	  </section>
+	</section>
+
+	<!-- INTEGRATION -->
+	<section>
+	  <section>Integration</section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      - [Kubicctl](https://en.opensuse.org/Kubic:KubicD_and_kubicctl)
+	      - SUSE Manager / [Uyuni](https://www.uyuni-project.org/uyuni-docs/uyuni/salt/yomi.html)
+	          - Cobbler
+	          - Formulas with forms
+	    </textarea>
+	  </section>
+	</section>
+
+	<!-- DEBUG -->
+	<section>
+	  <section>Debug</section>
+	  <section>
+	    <h2>PXE logs</h2>
+	    <pre><code data-trim data-noescape>
+# Add verbose output to tftp server
+emacs /etc/sysconfig/tftp
+
+# Change TFTP_OPTIONS="-vv"
+systemctl restart tftp.service
+journalctl -f
+	    </code></pre>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## Dracut / Network
+	      - If you see a loop in dracut, good chance that the network is not properly configured
+	          - Wait the debug shell
+	          – `ip s a`
+	          - `ifup eth0`
+	      - Check DNS server / open bug report
+	    </textarea>
+	  </section>
+	  <section>
+	    <h2>Master not found</h2>
+	    <pre><code data-trim data-noescape>
+# If the new node’s key do not appear,
+# execute in the node (root, no passwd)
+salt-call test.ping
+# Change the pxe boot kernel command line
+... master=10.0.3.101
+# Or edit the config file
+nano /etc/salt/minion.d/master.conf
+# master: 10.0.3.101
+	    </code></pre>
+	  </section>
+	  <section>
+	    <h2>Highstate problems</h2>
+	    <pre><code data-trim data-noescape>
+salt-call -l debug state.highstate 2>&1 | less
+# Or enable the monitor for real time notifications		
+	    </code></pre>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## Duplicate state
+	      - Salt complains about duplicate state name for `create_ifcfg_ethX`
+	      - Double check that `net.ifnames=1` is in the kernel command line
+	          - Is an artifact to normalize the network device name when the PXE image is based on SLE or in openSUSE
+	    </textarea>
+	  </section>
+	  <section data-markdown>
+	    <textarea data-template>
+	      ## Salt logs
+	      - Master
+	          - `/var/log/salt/master`
+	      - Minion
+	          – `/var/log/salt/minion`
+	    </textarea>
+	  </section>
+	</section>
+
+	<!-- ? -->
+	<section>
+	  <section><h2 class="r-fit-text">?</h2></section>
+	</section>
+      </div>
+    </div>
+
+    <script src="dist/reveal.js"></script>
+    <script src="plugin/notes/notes.js"></script>
+    <script src="plugin/markdown/markdown.js"></script>
+    <script src="plugin/highlight/highlight.js"></script>
+    <script>
+      // More info about initialization & config:
+      // - https://revealjs.com/initialization/
+      // - https://revealjs.com/config/
+      Reveal.initialize({
+	  hash: true,
+
+	  // Learn about plugins: https://revealjs.com/plugins/
+	  plugins: [ RevealMarkdown, RevealHighlight, RevealNotes ]
+      });
+    </script>
+  </body>
+</html>
